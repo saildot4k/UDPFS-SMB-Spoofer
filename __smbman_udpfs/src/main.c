@@ -26,6 +26,7 @@ IRX_ID(MODNAME, MODVER_MAJOR, MODVER_MINOR);
 
 extern struct irx_export_table _exp_smap;
 extern struct irx_export_table _exp_mstack;
+int smap_init(int argc, char *argv[]);
 
 #ifdef FEATURE_UDPFS_FHI
 extern struct irx_export_table _exp_fhi __attribute__((section("data")));
