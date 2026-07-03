@@ -13,7 +13,7 @@
 #include "udprdma.h"
 #include "ministack_udp.h"
 #include "smap.h"
-#include "main.h"
+#include "../include/main.h"
 #include "mprintf.h"
 
 

@@ -13,7 +13,7 @@
 #include "udpfs_core.h"
 #include "udpfs_packet.h"
 #include "udprdma.h"
-#include "main.h"
+#include "../include/main.h"
 
 
 /* State */

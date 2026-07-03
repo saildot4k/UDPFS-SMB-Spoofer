@@ -9,7 +9,7 @@ Filename-compatible PS2 IOP driver stack for launchers that only know how to loa
 - `ps2smap.irx`
 - `smbman.irx`
 
-Internally this is UDPFS over Neutrino's SMAP/ministack path. `smbman.irx` registers the `smb:` ioman device but serves file operations through UDPFS/UDPRDMA.
+Internally this is UDPFS over Neutrino's SMAP/ministack path. `smbman.irx` registers the `smb:` ioman device, fakes the SMB logon/share devctl flow, and lazily starts the bundled SMAP/ministack path when a real file operation needs UDPFS/UDPRDMA.
 
 ## Load Order
 
@@ -21,14 +21,14 @@ The expected SMB load order is preserved:
 | `ps2dev9.irx` | Real DEV9 hardware driver. |
 | `smsutils.irx` | Compatibility success module. |
 | `ps2ip.irx` | Compatibility success module for the TCP/IP stack slot. |
-| `ps2smap.irx` | Starts real SMAP hardware driver and ministack, exports `smap` and `mstack`. |
-| `smbman.irx` | UDPFS ioman driver registered as `smb:`. |
+| `ps2smap.irx` | Compatibility success module for the SMAP slot. |
+| `smbman.irx` | Bundled SMAP/ministack plus UDPFS ioman driver registered as `smb:`. |
 
 ## Layout
 
 - `__poweroff/` builds the real PS2SDK poweroff handler as `poweroff.irx`.
 - `__ps2dev9/` builds the real DEV9 dependency as `ps2dev9.irx`.
-- `__ps2ip_ministack/` bundles Neutrino SMAP and ministack into `ps2smap.irx`.
+- `__ps2ip_ministack/` holds the SMAP/ministack source and builds the lightweight `ps2smap.irx` compatibility module.
 - `__smbman_udpfs/` builds the UDPFS ioman driver disguised as `smbman.irx`.
 - `__ps2smap_stub/` builds the lightweight `ps2ip.irx` compatibility module.
 - `__smsutils_stub/` is a compatibility module that reports a successful load.

@@ -1,3 +1,24 @@
+DECLARE_EXPORT_TABLE(smap, 1, 0)
+	DECLARE_EXPORT(_retonly)
+	DECLARE_EXPORT(_retonly)
+	DECLARE_EXPORT(_retonly)
+	DECLARE_EXPORT(_retonly)
+	DECLARE_EXPORT(SMAPGetMACAddress)
+	DECLARE_EXPORT(smap_transmit)
+	DECLARE_EXPORT(smap_register_rx_callback)
+	DECLARE_EXPORT(smap_fifo_read)
+END_EXPORT_TABLE
+
+DECLARE_EXPORT_TABLE(mstack, 1, 0)
+	DECLARE_EXPORT(_retonly)
+	DECLARE_EXPORT(_retonly)
+	DECLARE_EXPORT(_retonly)
+	DECLARE_EXPORT(_retonly)
+	DECLARE_EXPORT(udp_bind)
+	DECLARE_EXPORT(udp_packet_init)
+	DECLARE_EXPORT(udp_packet_send_ll)
+END_EXPORT_TABLE
+
 #ifdef FEATURE_UDPFS_FHI
 DECLARE_EXPORT_TABLE(fhi, 1, 1)
 	DECLARE_EXPORT(_retonly)
@@ -8,6 +29,6 @@ DECLARE_EXPORT_TABLE(fhi, 1, 1)
 	DECLARE_EXPORT(fhi_read)
 	DECLARE_EXPORT(fhi_write)
 END_EXPORT_TABLE
+#endif
 
 void _retonly() {}
-#endif

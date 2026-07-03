@@ -15,7 +15,7 @@
 #include <string.h>
 #include <ps2smb.h>
 
-#include "main.h"
+#include "../include/main.h"
 #include "udpfs_core.h"
 
 
@@ -35,6 +35,8 @@ static udpfs_fd_t g_fds[UDPFS_MAX_HANDLES];
 static int g_udpfs_initialized = 0;
 static char g_smb_share_name[256] = "UDPFS";
 
+extern int udpfs_network_init(void);
+
 static int udpfs_ensure_connected(void)
 {
     if (udpfs_core_is_connected()) {
@@ -46,6 +48,9 @@ static int udpfs_ensure_connected(void)
         udpfs_core_exit();
         g_udpfs_initialized = 0;
     }
+
+    if (udpfs_network_init() < 0)
+        return -EIO;
 
     if (udpfs_core_init() < 0)
         return -EIO;
