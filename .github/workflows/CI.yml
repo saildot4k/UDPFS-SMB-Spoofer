@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - '*'
+    tags:
+      - 'v*'
+    paths-ignore:
+      - '**.md'
+      - '**.MD'
+      - '**.gitignore'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: ps2dev/ps2dev:latest
+    steps:
+      - name: Install dependencies
+        run: |
+          apk add build-base git p7zip
+
+      - uses: actions/checkout@v4
+
+      - name: Compile
+        run: |
+          make clean package
+
+      - name: Upload IRX artifacts
+        if: ${{ success() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: UDPFS_SMB_SPOOFER_IRX
+          path: |
+            *.irx
+            UDPFS_SMB_Spoofer.7z
+
+      - name: Create release
+        if: github.ref == 'refs/heads/main'
+        uses: marvinpinto/action-automatic-releases@latest
+        with:
+          repo_token: "${{ secrets.GITHUB_TOKEN }}"
+          prerelease: true
+          automatic_release_tag: "latest"
+          title: "Latest development build"
+          files: |
+            UDPFS_SMB_Spoofer.7z

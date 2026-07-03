@@ -1,0 +1,6 @@
+thirdparty/
+*.irx
+*.7z
+READY_TO_USE_*/
+obj/
+*/obj/

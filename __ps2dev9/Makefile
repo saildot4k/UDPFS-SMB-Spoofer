@@ -1,0 +1,21 @@
+DEV9_SKIP_SMAP_INIT ?= 0
+DEV9_PSX_SUPPORT ?= 1
+DEV9_GAMESTAR_WORKAROUND ?= 1
+
+IOP_BIN = ../ps2dev9.irx
+IOP_INCS += -Iinclude
+IOP_OBJS = ps2dev9.o exports.o imports.o
+
+ifeq ($(DEV9_SKIP_SMAP_INIT),1)
+IOP_CFLAGS += -DDEV9_SKIP_SMAP_INIT=1
+endif
+
+ifeq ($(DEV9_PSX_SUPPORT),1)
+IOP_CFLAGS += -DDEV9_PSX_SUPPORT=1
+endif
+
+ifeq ($(DEV9_GAMESTAR_WORKAROUND),1)
+IOP_CFLAGS += -DDEV9_GAMESTAR_WORKAROUND=1
+endif
+
+include ../global.make
