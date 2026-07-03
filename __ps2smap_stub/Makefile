@@ -1,4 +1,4 @@
-IOP_BIN = ../ps2smap.irx
+IOP_BIN = ../ps2ip.irx
 IOP_OBJS = main.o
 
 include ../global.make

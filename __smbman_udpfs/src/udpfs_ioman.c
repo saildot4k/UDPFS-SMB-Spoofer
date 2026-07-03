@@ -6,8 +6,10 @@
  */
 
 #include <errno.h>
+#include <intrman.h>
 #include <iomanX.h>
 #include <io_common.h>
+#include <sifman.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
@@ -31,6 +33,7 @@ typedef struct {
 
 static udpfs_fd_t g_fds[UDPFS_MAX_HANDLES];
 static int g_udpfs_initialized = 0;
+static char g_smb_share_name[256] = "UDPFS";
 
 static int udpfs_ensure_connected(void)
 {
@@ -49,6 +52,56 @@ static int udpfs_ensure_connected(void)
 
     g_udpfs_initialized = 1;
     return 0;
+}
+
+static void smb_set_share_name(const char *name)
+{
+    if (name == NULL || name[0] == 0)
+        return;
+
+    memset(g_smb_share_name, 0, sizeof(g_smb_share_name));
+    strncpy(g_smb_share_name, name, sizeof(g_smb_share_name) - 1);
+}
+
+static void smb_dma_send_ee(const void *buf, int size, void *ee_addr)
+{
+    SifDmaTransfer_t dmat;
+    int oldstate, id;
+
+    if (buf == NULL || ee_addr == NULL || size <= 0)
+        return;
+
+    dmat.dest = ee_addr;
+    dmat.size = size;
+    dmat.src  = (void *)buf;
+    dmat.attr = 0;
+
+    id = 0;
+    while (!id) {
+        CpuSuspendIntr(&oldstate);
+        id = sceSifSetDma(&dmat, 1);
+        CpuResumeIntr(oldstate);
+    }
+
+    while (sceSifDmaStat(id) >= 0)
+        ;
+}
+
+static int smb_fake_get_share_list(const smbGetShareList_in_t *req)
+{
+    ShareEntry_t entry;
+
+    if (req == NULL)
+        return 1;
+    if (req->maxent <= 0)
+        return 0;
+
+    memset(&entry, 0, sizeof(entry));
+    strncpy(entry.ShareName, g_smb_share_name, sizeof(entry.ShareName) - 1);
+    strncpy(entry.ShareComment, "UDPFS SMB spoofer", sizeof(entry.ShareComment) - 1);
+
+    smb_dma_send_ee(&entry, sizeof(entry), req->EE_addr);
+    return 1;
 }
 
 
@@ -406,10 +459,22 @@ static int udpfs_devctl(iomanX_iop_file_t *f, const char *name, int cmd, void *a
             return 0;
 
         case SMB_DEVCTL_LOGON:
+            return 0;
+
         case SMB_DEVCTL_LOGOFF:
+            return 0;
+
         case SMB_DEVCTL_GETSHARELIST:
+            return smb_fake_get_share_list((const smbGetShareList_in_t *)arg);
+
         case SMB_DEVCTL_OPENSHARE:
+            if (arg != NULL && arglen >= sizeof(smbOpenShare_in_t))
+                smb_set_share_name(((const smbOpenShare_in_t *)arg)->ShareName);
+            return 0;
+
         case SMB_DEVCTL_CLOSESHARE:
+            return 0;
+
         case SMB_DEVCTL_ECHO:
             return 0;
 

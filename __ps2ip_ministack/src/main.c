@@ -11,7 +11,7 @@
 #include "smap.h"
 #include "udptty.h"
 
-IRX_ID("TCP/IP Stack", 2, 3);
+IRX_ID("SMAP_driver", 0x2, 0x1A);
 
 extern struct irx_export_table _exp_smap;
 extern struct irx_export_table _exp_mstack;

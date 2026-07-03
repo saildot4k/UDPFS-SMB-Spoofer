@@ -4,9 +4,11 @@
 #include <irx.h>
 
 /* Please keep these in alphabetical order!  */
+#include <intrman.h>
 #include <ioman.h>
 #include <loadcore.h>
 #include <mstack.h>
+#include <sifman.h>
 #include "smap.h"
 #include <stdio.h>
 #include <sysclib.h>

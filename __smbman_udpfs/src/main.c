@@ -21,11 +21,16 @@ extern struct irx_export_table _exp_fhi __attribute__((section("data")));
 
 int _start(int argc, char *argv[])
 {
+    int ret;
+
     (void)argc; (void)argv;
 
     /* Start udpfs as local IOP file system: "udpfs:" */
 #ifdef FEATURE_UDPFS_IOMAN
-    udpfs_init();
+    M_PRINTF("%s version 0x%01x%02x start!\n", MODNAME, MODVER_MAJOR, MODVER_MINOR);
+    ret = udpfs_init();
+    if (ret != 0)
+        return MODULE_NO_RESIDENT_END;
 #endif
 
     /* Start udpfs as BDM block device */
