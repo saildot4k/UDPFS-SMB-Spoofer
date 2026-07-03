@@ -9,10 +9,12 @@
 #include <intrman.h>
 #include <iomanX.h>
 #include <io_common.h>
+#include <sifcmd.h>
 #include <sifman.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
+#include <thbase.h>
 #include <ps2smb.h>
 
 #include "../include/main.h"
@@ -20,6 +22,22 @@
 
 
 #define UDPFS_MAX_HANDLES 8
+
+#define SMS_SIF_CMD_IOP_NOTIFY 18
+#define SMS_SIF_CMD_SMB_CONNECT 0
+
+#define SMS_SMB_IOCTL_LOGIN  0x00000000
+#define SMS_SMB_IOCTL_LOGOUT 0x00000001
+#define SMS_SMB_IOCTL_MOUNT  0x00000002
+#define SMS_SMB_IOCTL_UMOUNT 0x00000003
+#define SMS_SMB_IOCTL_SENUM  0x00000004
+#define SMS_SMB_IOCTL_ECHO   0x00000005
+#define SMS_SMB_IOCTL_STOPC  0x00000006
+#define SMS_SMB_IOCTL_SETCP  0x00000007
+
+#define SMS_SMB_SENUM_SIZE 8096
+#define SMS_ROOT_HANDLE ((void *)(uintptr_t)0x534d4252)
+#define SMS_ROOT_DONE_HANDLE ((void *)(uintptr_t)0x534d4244)
 
 #ifndef UDPFS_IOMAN_DEVICE_NAME
 #define UDPFS_IOMAN_DEVICE_NAME "udpfs"
@@ -31,9 +49,27 @@ typedef struct {
     int     is_dir;         /* 1 if directory, 0 if file */
 } udpfs_fd_t;
 
+typedef struct {
+    char m_Name[13];
+    unsigned char m_Pad;
+    unsigned short m_Type;
+    char *m_pRemark;
+} sms_share_info_t;
+
+typedef struct {
+    int m_Unit __attribute__((packed));
+    char m_Path[512];
+} sms_mount_info_t;
+
+typedef struct {
+    int m_Unit __attribute__((packed));
+    sms_share_info_t *m_pInfo __attribute__((packed));
+} sms_senum_info_t;
+
 static udpfs_fd_t g_fds[UDPFS_MAX_HANDLES];
 static int g_udpfs_initialized = 0;
 static char g_smb_share_name[256] = "UDPFS";
+static unsigned char g_sms_senum_buf[SMS_SMB_SENUM_SIZE] __attribute__((aligned(64)));
 
 extern int udpfs_network_init(void);
 
@@ -107,6 +143,84 @@ static int smb_fake_get_share_list(const smbGetShareList_in_t *req)
 
     smb_dma_send_ee(&entry, sizeof(entry), req->EE_addr);
     return 1;
+}
+
+static void sms_notify_login_success(void)
+{
+    int cmd[7] __attribute__((aligned(64)));
+    int id;
+
+    memset(cmd, 0, sizeof(cmd));
+    cmd[3] = SMS_SIF_CMD_SMB_CONNECT;
+    cmd[4] = 0; /* SMB unit */
+    cmd[5] = 0; /* SMB error */
+    cmd[6] = 0; /* server error */
+
+    id = sceSifSendCmd(SMS_SIF_CMD_IOP_NOTIFY, cmd, sizeof(cmd), NULL, NULL, 0);
+    if (id != 0) {
+        while (sceSifDmaStat(id) >= 0)
+            DelayThread(100);
+    }
+}
+
+static int sms_fake_share_enum(const sms_senum_info_t *req)
+{
+    sms_share_info_t *entry;
+    char *remark;
+    uintptr_t ee_base;
+    int remark_off;
+
+    if (req == NULL || req->m_pInfo == NULL)
+        return 1;
+
+    memset(g_sms_senum_buf, 0, sizeof(g_sms_senum_buf));
+
+    entry = (sms_share_info_t *)g_sms_senum_buf;
+    remark_off = sizeof(sms_share_info_t);
+    remark = (char *)&g_sms_senum_buf[remark_off];
+    ee_base = (uintptr_t)req->m_pInfo;
+
+    strncpy(entry->m_Name, g_smb_share_name, sizeof(entry->m_Name) - 1);
+    entry->m_Type = 0;
+    entry->m_pRemark = (char *)(ee_base + remark_off);
+    strncpy(remark, "UDPFS SMB spoofer", SMS_SMB_SENUM_SIZE - remark_off - 1);
+
+    smb_dma_send_ee(g_sms_senum_buf, sizeof(g_sms_senum_buf), req->m_pInfo);
+    return 1;
+}
+
+static int sms_ioctl(unsigned long cmd, void *data)
+{
+    switch (cmd) {
+        case SMS_SMB_IOCTL_LOGIN:
+            sms_notify_login_success();
+            return 0;
+
+        case SMS_SMB_IOCTL_LOGOUT:
+            return 0;
+
+        case SMS_SMB_IOCTL_MOUNT:
+            if (data != NULL) {
+                const sms_mount_info_t *info = (const sms_mount_info_t *)data;
+                if (info->m_Path[0] != 0)
+                    smb_set_share_name(info->m_Path);
+            }
+            return 1;
+
+        case SMS_SMB_IOCTL_UMOUNT:
+            return 0;
+
+        case SMS_SMB_IOCTL_SENUM:
+            return sms_fake_share_enum((const sms_senum_info_t *)data);
+
+        case SMS_SMB_IOCTL_ECHO:
+        case SMS_SMB_IOCTL_STOPC:
+        case SMS_SMB_IOCTL_SETCP:
+            return 0;
+    }
+
+    M_PRINTF("smb ioctl: unhandled cmd=0x%08x, faking success\n", (unsigned int)cmd);
+    return 0;
 }
 
 
@@ -296,6 +410,9 @@ static int udpfs_lseek(iomanX_iop_file_t *f, int offset, int whence)
 
 static int udpfs_ioctl(iomanX_iop_file_t *f, int cmd, void *data)
 {
+    if (f->privdata == SMS_ROOT_HANDLE || f->privdata == SMS_ROOT_DONE_HANDLE)
+        return sms_ioctl((unsigned long)cmd, data);
+
     return -EIO;
 }
 
@@ -345,8 +462,16 @@ static int udpfs_dopen(iomanX_iop_file_t *f, const char *path)
 {
     int fd_idx, ret;
     int32_t server_handle;
+    const char *log_path = path != NULL ? path : "";
 
-    M_DEBUG("%s(%s)\n", __FUNCTION__, path);
+    M_DEBUG("%s(%s)\n", __FUNCTION__, log_path);
+
+    if (f->unit == 0 && (log_path[0] == 0 || (log_path[0] == '/' && log_path[1] == 0))) {
+        f->privdata = SMS_ROOT_HANDLE;
+        return 0;
+    }
+
+    path = log_path;
 
     ret = udpfs_ensure_connected();
     if (ret < 0)
@@ -375,6 +500,12 @@ static int udpfs_dopen(iomanX_iop_file_t *f, const char *path)
 static int udpfs_dclose(iomanX_iop_file_t *f)
 {
     M_DEBUG("%s()\n", __FUNCTION__);
+
+    if (f->privdata == SMS_ROOT_HANDLE || f->privdata == SMS_ROOT_DONE_HANDLE) {
+        f->privdata = NULL;
+        return 0;
+    }
+
     return udpfs_close(f);
 }
 
@@ -385,6 +516,17 @@ static int udpfs_dread(iomanX_iop_file_t *f, iox_dirent_t *dirent)
     iox_stat_t stat;
     char name[256];
     int ret;
+
+    if (f->privdata == SMS_ROOT_HANDLE) {
+        memset(dirent, 0, sizeof(iox_dirent_t));
+        dirent->stat.mode = FIO_S_IFDIR | FIO_S_IRUSR | FIO_S_IXUSR | FIO_S_IRGRP | FIO_S_IXGRP | FIO_S_IROTH | FIO_S_IXOTH;
+        strncpy(dirent->name, g_smb_share_name, sizeof(dirent->name) - 1);
+        f->privdata = SMS_ROOT_DONE_HANDLE;
+        return 1;
+    }
+
+    if (f->privdata == SMS_ROOT_DONE_HANDLE)
+        return 0;
 
     ret = _validate_fd(f, &fd_idx, &server_handle);
     if (ret < 0)
@@ -494,7 +636,8 @@ static int udpfs_devctl(iomanX_iop_file_t *f, const char *name, int cmd, void *a
             return 0;
     }
 
-    return -EINVAL;
+    M_PRINTF("smb devctl: unhandled cmd=0x%08x, faking success\n", cmd);
+    return 0;
 }
 
 static int udpfs_symlink(iomanX_iop_file_t *f, const char *old, const char *new_name)

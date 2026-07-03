@@ -1,0 +1,13 @@
+DECLARE_EXPORT_TABLE(smsutils, 1, 1)
+	DECLARE_EXPORT(_start)
+	DECLARE_EXPORT(_retonly)
+	DECLARE_EXPORT(_retonly)
+	DECLARE_EXPORT(_retonly)
+	DECLARE_EXPORT(mips_memcpy)
+	DECLARE_EXPORT(mips_memset)
+	DECLARE_EXPORT(_retonly)
+	DECLARE_EXPORT(_retonly)
+	DECLARE_EXPORT(mips_ee_printf)
+END_EXPORT_TABLE
+
+void _retonly() {}

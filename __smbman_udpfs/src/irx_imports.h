@@ -9,6 +9,7 @@
 #include <ioman.h>
 #include <loadcore.h>
 #include <mstack.h>
+#include <sifcmd.h>
 #include <sifman.h>
 #include "smap.h"
 #include <stdio.h>
