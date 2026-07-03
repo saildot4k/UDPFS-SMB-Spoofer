@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
+#include <ps2smb.h>
 
 #include "main.h"
 #include "udpfs_core.h"
@@ -22,23 +23,6 @@
 #define UDPFS_IOMAN_DEVICE_NAME "udpfs"
 #endif
 
-#define SMB_DEVCTL_GETPASSWORDHASHES 0xC0DE0001
-#define SMB_DEVCTL_LOGON             0xC0DE0002
-#define SMB_DEVCTL_LOGOFF            0xC0DE0003
-#define SMB_DEVCTL_GETSHARELIST      0xC0DE0004
-#define SMB_DEVCTL_OPENSHARE         0xC0DE0005
-#define SMB_DEVCTL_CLOSESHARE        0xC0DE0006
-#define SMB_DEVCTL_ECHO              0xC0DE0007
-#define SMB_DEVCTL_QUERYDISKINFO     0xC0DE0008
-
-typedef struct {
-    int TotalUnits;
-    int BlocksPerUnit;
-    int BlockSize;
-    int FreeUnits;
-} smb_query_disk_info_t;
-
-
 /* Per-handle state for file descriptor mapping */
 typedef struct {
     int32_t server_handle;  /* Server-side handle, -1 = free */
@@ -46,6 +30,26 @@ typedef struct {
 } udpfs_fd_t;
 
 static udpfs_fd_t g_fds[UDPFS_MAX_HANDLES];
+static int g_udpfs_initialized = 0;
+
+static int udpfs_ensure_connected(void)
+{
+    if (udpfs_core_is_connected()) {
+        g_udpfs_initialized = 1;
+        return 0;
+    }
+
+    if (g_udpfs_initialized) {
+        udpfs_core_exit();
+        g_udpfs_initialized = 0;
+    }
+
+    if (udpfs_core_init() < 0)
+        return -EIO;
+
+    g_udpfs_initialized = 1;
+    return 0;
+}
 
 
 /*
@@ -95,27 +99,31 @@ static int _validate_fd(iomanX_iop_file_t *f, int *fd_idx_out, int32_t *handle_o
 
 static int udpfs_init_dev(iomanX_iop_device_t *d)
 {
-    int i, ret;
+    int i;
 
     M_DEBUG("%s()\n", __FUNCTION__);
+    (void)d;
 
     /* Initialize FD table */
     for (i = 0; i < UDPFS_MAX_HANDLES; i++)
         g_fds[i].server_handle = -1;
 
-    /* Initialize core UDPFS */
-    ret = udpfs_core_init();
-    if (ret < 0)
-        return -1;
+    g_udpfs_initialized = 0;
 
-    M_DEBUG("udpfs: ready\n");
+    M_DEBUG("udpfs: smb compatibility device ready\n");
     return 0;
 }
 
 static int udpfs_deinit_dev(iomanX_iop_device_t *d)
 {
     M_DEBUG("%s()\n", __FUNCTION__);
-    udpfs_core_exit();
+    (void)d;
+
+    if (g_udpfs_initialized) {
+        udpfs_core_exit();
+        g_udpfs_initialized = 0;
+    }
+
     return 0;
 }
 
@@ -130,6 +138,10 @@ static int udpfs_open(iomanX_iop_file_t *f, const char *name, int flags, int mod
     int32_t server_handle;
 
     M_DEBUG("%s(%s, 0x%x)\n", __FUNCTION__, name, flags);
+
+    ret = udpfs_ensure_connected();
+    if (ret < 0)
+        return ret;
 
     /* Allocate local fd */
     fd_idx = _alloc_fd();
@@ -231,19 +243,43 @@ static int udpfs_ioctl(iomanX_iop_file_t *f, int cmd, void *data)
 
 static int udpfs_remove(iomanX_iop_file_t *f, const char *name)
 {
+    int ret;
+
+    (void)f;
     M_DEBUG("%s(%s)\n", __FUNCTION__, name);
+
+    ret = udpfs_ensure_connected();
+    if (ret < 0)
+        return ret;
+
     return udpfs_core_remove(name);
 }
 
 static int udpfs_mkdir(iomanX_iop_file_t *f, const char *path, int mode)
 {
+    int ret;
+
+    (void)f;
     M_DEBUG("%s(%s, 0x%x)\n", __FUNCTION__, path, mode);
+
+    ret = udpfs_ensure_connected();
+    if (ret < 0)
+        return ret;
+
     return udpfs_core_mkdir(path, mode);
 }
 
 static int udpfs_rmdir(iomanX_iop_file_t *f, const char *path)
 {
+    int ret;
+
+    (void)f;
     M_DEBUG("%s(%s)\n", __FUNCTION__, path);
+
+    ret = udpfs_ensure_connected();
+    if (ret < 0)
+        return ret;
+
     return udpfs_core_rmdir(path);
 }
 
@@ -253,6 +289,10 @@ static int udpfs_dopen(iomanX_iop_file_t *f, const char *path)
     int32_t server_handle;
 
     M_DEBUG("%s(%s)\n", __FUNCTION__, path);
+
+    ret = udpfs_ensure_connected();
+    if (ret < 0)
+        return ret;
 
     /* Allocate local fd */
     fd_idx = _alloc_fd();
@@ -310,7 +350,15 @@ static int udpfs_dread(iomanX_iop_file_t *f, iox_dirent_t *dirent)
 
 static int udpfs_getstat(iomanX_iop_file_t *f, const char *name, iox_stat_t *stat)
 {
+    int ret;
+
+    (void)f;
     M_DEBUG("%s(%s)\n", __FUNCTION__, name);
+
+    ret = udpfs_ensure_connected();
+    if (ret < 0)
+        return ret;
+
     return udpfs_core_getstat(name, stat);
 }
 
@@ -366,8 +414,8 @@ static int udpfs_devctl(iomanX_iop_file_t *f, const char *name, int cmd, void *a
             return 0;
 
         case SMB_DEVCTL_QUERYDISKINFO:
-            if (buf != NULL && buflen >= sizeof(smb_query_disk_info_t)) {
-                smb_query_disk_info_t *info = (smb_query_disk_info_t *)buf;
+            if (buf != NULL && buflen >= sizeof(smbQueryDiskInfo_out_t)) {
+                smbQueryDiskInfo_out_t *info = (smbQueryDiskInfo_out_t *)buf;
                 info->TotalUnits = 0x100000;
                 info->BlocksPerUnit = 1;
                 info->BlockSize = 512;
@@ -376,7 +424,7 @@ static int udpfs_devctl(iomanX_iop_file_t *f, const char *name, int cmd, void *a
             return 0;
     }
 
-    return -EIO;
+    return -EINVAL;
 }
 
 static int udpfs_symlink(iomanX_iop_file_t *f, const char *old, const char *new_name)
@@ -450,10 +498,15 @@ static iomanX_iop_device_t udpfs_device = {
  */
 int udpfs_init(void)
 {
+    int ret;
+
     M_DEBUG("UDPFS over UDPRDMA by Maximus32\n");
 
     /* Register iomanX device */
-    AddDrv(&udpfs_device);
+    DelDrv(udpfs_device.name);
+    ret = AddDrv(&udpfs_device);
+    if (ret != 0)
+        return ret;
 
     return 0;
 }
