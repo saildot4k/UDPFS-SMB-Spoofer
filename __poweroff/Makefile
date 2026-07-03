@@ -1,4 +1,4 @@
 IOP_BIN = ../poweroff.irx
-IOP_OBJS = poweroff.o imports.o exports.o
+IOP_OBJS = exports.o poweroff.o imports.o
 
 include ../global.make

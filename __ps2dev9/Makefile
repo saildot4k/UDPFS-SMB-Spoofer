@@ -4,7 +4,7 @@ DEV9_GAMESTAR_WORKAROUND ?= 1
 
 IOP_BIN = ../ps2dev9.irx
 IOP_INCS += -Iinclude
-IOP_OBJS = ps2dev9.o exports.o imports.o
+IOP_OBJS = exports.o ps2dev9.o imports.o
 
 ifeq ($(DEV9_SKIP_SMAP_INIT),1)
 IOP_CFLAGS += -DDEV9_SKIP_SMAP_INIT=1
