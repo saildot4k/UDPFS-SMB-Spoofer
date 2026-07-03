@@ -193,10 +193,12 @@ static int sms_ioctl(unsigned long cmd, void *data)
 {
     switch (cmd) {
         case SMS_SMB_IOCTL_LOGIN:
+            M_PRINTF("smb ioctl: LOGIN -> success\n");
             sms_notify_login_success();
             return 0;
 
         case SMS_SMB_IOCTL_LOGOUT:
+            M_PRINTF("smb ioctl: LOGOUT -> success\n");
             return 0;
 
         case SMS_SMB_IOCTL_MOUNT:
@@ -205,17 +207,27 @@ static int sms_ioctl(unsigned long cmd, void *data)
                 if (info->m_Path[0] != 0)
                     smb_set_share_name(info->m_Path);
             }
+            M_PRINTF("smb ioctl: MOUNT -> unit 1\n");
             return 1;
 
         case SMS_SMB_IOCTL_UMOUNT:
+            M_PRINTF("smb ioctl: UMOUNT -> success\n");
             return 0;
 
         case SMS_SMB_IOCTL_SENUM:
+            M_PRINTF("smb ioctl: SENUM -> 1 share\n");
             return sms_fake_share_enum((const sms_senum_info_t *)data);
 
         case SMS_SMB_IOCTL_ECHO:
+            M_PRINTF("smb ioctl: ECHO -> success\n");
+            return 0;
+
         case SMS_SMB_IOCTL_STOPC:
+            M_PRINTF("smb ioctl: STOPC -> success\n");
+            return 0;
+
         case SMS_SMB_IOCTL_SETCP:
+            M_PRINTF("smb ioctl: SETCP -> success\n");
             return 0;
     }
 
@@ -601,31 +613,39 @@ static int udpfs_devctl(iomanX_iop_file_t *f, const char *name, int cmd, void *a
 
     switch (cmd) {
         case SMB_DEVCTL_GETPASSWORDHASHES:
+            M_PRINTF("smb devctl: GETPASSWORDHASHES -> success\n");
             if (buf != NULL && buflen > 0)
                 memset(buf, 0, buflen);
             return 0;
 
         case SMB_DEVCTL_LOGON:
+            M_PRINTF("smb devctl: LOGON -> success\n");
             return 0;
 
         case SMB_DEVCTL_LOGOFF:
+            M_PRINTF("smb devctl: LOGOFF -> success\n");
             return 0;
 
         case SMB_DEVCTL_GETSHARELIST:
+            M_PRINTF("smb devctl: GETSHARELIST -> 1 share\n");
             return smb_fake_get_share_list((const smbGetShareList_in_t *)arg);
 
         case SMB_DEVCTL_OPENSHARE:
             if (arg != NULL && arglen >= sizeof(smbOpenShare_in_t))
                 smb_set_share_name(((const smbOpenShare_in_t *)arg)->ShareName);
+            M_PRINTF("smb devctl: OPENSHARE -> success\n");
             return 0;
 
         case SMB_DEVCTL_CLOSESHARE:
+            M_PRINTF("smb devctl: CLOSESHARE -> success\n");
             return 0;
 
         case SMB_DEVCTL_ECHO:
+            M_PRINTF("smb devctl: ECHO -> success\n");
             return 0;
 
         case SMB_DEVCTL_QUERYDISKINFO:
+            M_PRINTF("smb devctl: QUERYDISKINFO -> success\n");
             if (buf != NULL && buflen >= sizeof(smbQueryDiskInfo_out_t)) {
                 smbQueryDiskInfo_out_t *info = (smbQueryDiskInfo_out_t *)buf;
                 info->TotalUnits = 0x100000;
@@ -721,5 +741,6 @@ int udpfs_init(void)
     if (ret != 0)
         return ret;
 
+    M_PRINTF("smb: compatibility device registered\n");
     return 0;
 }
