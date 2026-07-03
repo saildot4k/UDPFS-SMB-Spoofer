@@ -13,6 +13,7 @@ stdio_IMPORTS_end
 
 sysclib_IMPORTS_start
 I_bzero
+I_memcpy
 I_strncmp
 sysclib_IMPORTS_end
 
