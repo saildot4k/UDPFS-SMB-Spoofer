@@ -41,12 +41,9 @@ ioman_IMPORTS_start
 I_open
 I_read
 I_close
+I_AddDrv
+I_DelDrv
 ioman_IMPORTS_end
-
-iomanX_IMPORTS_start
-I_iomanX_AddDrv
-I_iomanX_DelDrv
-iomanX_IMPORTS_end
 #endif
 
 #ifdef FEATURE_UDPFS_BD

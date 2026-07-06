@@ -7,12 +7,6 @@
 
 #include <errno.h>
 #include <intrman.h>
-#ifndef IOMANX_OLD_NAME_COMPATIBILITY
-#define IOMANX_OLD_NAME_COMPATIBILITY 0
-#endif
-#ifndef IOMANX_OLD_NAME_ADDDELDRV
-#define IOMANX_OLD_NAME_ADDDELDRV 0
-#endif
 #include <iomanX.h>
 #include <io_common.h>
 #include <sifcmd.h>
@@ -25,10 +19,6 @@
 
 #include "../include/main.h"
 #include "udpfs_core.h"
-
-typedef iomanX_iop_file_t iop_file_t;
-typedef iomanX_iop_device_t iop_device_t;
-typedef iomanX_iop_device_ops_t iop_device_ops_t;
 
 #define UDPFS_MAX_HANDLES 8
 
@@ -877,8 +867,8 @@ int udpfs_init(void)
 
     M_DEBUG("UDPFS over UDPRDMA by Maximus32\n");
 
-    iomanX_DelDrv(udpfs_device.name);
-    ret = iomanX_AddDrv(&udpfs_device);
+    DelDrv(udpfs_device.name);
+    ret = AddDrv((iop_device_t *)&udpfs_device);
     if (ret != 0)
         return ret;
 
