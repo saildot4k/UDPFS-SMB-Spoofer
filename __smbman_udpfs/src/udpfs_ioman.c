@@ -66,6 +66,15 @@ typedef struct {
     sms_share_info_t *m_pInfo __attribute__((packed));
 } sms_senum_info_t;
 
+typedef struct {
+    char m_ServerIP[16];
+    char m_ServerName[16];
+    char m_ClientName[16];
+    char m_UserName[32];
+    char m_Password[64];
+    char m_fAsync;
+} sms_login_info_t;
+
 static udpfs_fd_t g_fds[UDPFS_MAX_HANDLES];
 static int g_udpfs_initialized = 0;
 static char g_smb_share_name[256] = "UDPFS";
@@ -161,6 +170,33 @@ static void sms_notify_login_success(void)
         while (sceSifDmaStat(id) >= 0)
             DelayThread(100);
     }
+
+    M_PRINTF("smb ioctl: LOGIN SIF success sent\n");
+}
+
+static void sms_login_notify_thread(void *arg)
+{
+    (void)arg;
+
+    DelayThread(1000);
+    sms_notify_login_success();
+    ExitDeleteThread();
+}
+
+static void sms_start_login_notify_thread(void)
+{
+    iop_thread_t thread;
+    int tid;
+
+    memset(&thread, 0, sizeof(thread));
+    thread.attr = TH_C;
+    thread.thread = sms_login_notify_thread;
+    thread.stacksize = 2048;
+    thread.priority = 64;
+
+    tid = CreateThread(&thread);
+    if (tid <= 0 || StartThread(tid, NULL) < 0)
+        sms_notify_login_success();
 }
 
 static int sms_fake_share_enum(const sms_senum_info_t *req)
@@ -193,8 +229,13 @@ static int sms_ioctl(unsigned long cmd, void *data)
 {
     switch (cmd) {
         case SMS_SMB_IOCTL_LOGIN:
-            M_PRINTF("smb ioctl: LOGIN -> success\n");
-            sms_notify_login_success();
+            if (data == NULL || ((const sms_login_info_t *)data)->m_fAsync) {
+                M_PRINTF("smb ioctl: LOGIN async -> notify success\n");
+                sms_start_login_notify_thread();
+                return -EINPROGRESS;
+            }
+
+            M_PRINTF("smb ioctl: LOGIN sync -> unit 0\n");
             return 0;
 
         case SMS_SMB_IOCTL_LOGOUT:
