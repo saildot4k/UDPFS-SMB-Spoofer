@@ -78,6 +78,8 @@ typedef struct {
 
 static udpfs_fd_t g_fds[UDPFS_MAX_HANDLES];
 static int g_udpfs_initialized = 0;
+static int g_ps2sdk_logged_on = 0;
+static int g_ps2sdk_share_open = 0;
 static char g_smb_share_name[256] = "UDPFS";
 static unsigned char g_sms_senum_buf[SMS_SMB_SENUM_SIZE] __attribute__((aligned(64)));
 
@@ -730,24 +732,40 @@ static int udpfs_devctl(iop_file_t *f, const char *name, int cmd, void *arg, uns
             return 0;
 
         case SMB_DEVCTL_LOGON:
-            M_PRINTF("smb devctl: LOGON -> success\n");
+            g_ps2sdk_logged_on = 1;
+            g_ps2sdk_share_open = 0;
+            if (arg != NULL && arglen >= sizeof(smbLogOn_in_t)) {
+                const smbLogOn_in_t *logon = (const smbLogOn_in_t *)arg;
+                M_PRINTF("smb devctl: LOGON server='%s' port=%d -> success\n",
+                    logon->serverIP, logon->serverPort);
+            } else {
+                M_PRINTF("smb devctl: LOGON -> success\n");
+            }
             return 0;
 
         case SMB_DEVCTL_LOGOFF:
+            g_ps2sdk_logged_on = 0;
+            g_ps2sdk_share_open = 0;
             M_PRINTF("smb devctl: LOGOFF -> success\n");
             return 0;
 
         case SMB_DEVCTL_GETSHARELIST:
+            if (!g_ps2sdk_logged_on)
+                g_ps2sdk_logged_on = 1;
             M_PRINTF("smb devctl: GETSHARELIST -> 1 share\n");
             return smb_fake_get_share_list((const smbGetShareList_in_t *)arg);
 
         case SMB_DEVCTL_OPENSHARE:
             if (arg != NULL && arglen >= sizeof(smbOpenShare_in_t))
                 smb_set_share_name(((const smbOpenShare_in_t *)arg)->ShareName);
+            if (!g_ps2sdk_logged_on)
+                g_ps2sdk_logged_on = 1;
+            g_ps2sdk_share_open = 1;
             M_PRINTF("smb devctl: OPENSHARE -> success\n");
             return 0;
 
         case SMB_DEVCTL_CLOSESHARE:
+            g_ps2sdk_share_open = 0;
             M_PRINTF("smb devctl: CLOSESHARE -> success\n");
             return 0;
 
@@ -756,6 +774,10 @@ static int udpfs_devctl(iop_file_t *f, const char *name, int cmd, void *arg, uns
             return 0;
 
         case SMB_DEVCTL_QUERYDISKINFO:
+            if (!g_ps2sdk_logged_on)
+                g_ps2sdk_logged_on = 1;
+            if (!g_ps2sdk_share_open)
+                g_ps2sdk_share_open = 1;
             M_PRINTF("smb devctl: QUERYDISKINFO -> success\n");
             if (buf != NULL && buflen >= sizeof(smbQueryDiskInfo_out_t)) {
                 smbQueryDiskInfo_out_t *info = (smbQueryDiskInfo_out_t *)buf;
@@ -832,7 +854,7 @@ static iop_device_t udpfs_device = {
     udpfs_name,
     IOP_DT_FSEXT | IOP_DT_FS,
     1,
-    udpfs_name,
+    "SMB",
     &udpfs_device_ops
 };
 
@@ -846,13 +868,11 @@ int udpfs_init(void)
 
     M_DEBUG("UDPFS over UDPRDMA by Maximus32\n");
 
-    /* Register iomanX device */
-    DelDrv(udpfs_device.name);
-    ret = AddDrv(&udpfs_device);
+    iomanX_DelDrv(udpfs_device.name);
+    ret = iomanX_AddDrv(&udpfs_device);
     if (ret != 0)
         return ret;
 
     M_PRINTF("smb: compatibility device registered\n");
-    sms_start_login_notify_thread();
     return 0;
 }

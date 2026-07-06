@@ -9,7 +9,9 @@ Filename-compatible PS2 IOP driver stack for launchers that only know how to loa
 - `ps2smap.irx`
 - `smbman.irx`
 
-Internally this is UDPFS over Neutrino's SMAP/ministack path. `smbman.irx` registers the `smb:` ioman device, fakes both PS2SDK SMB devctl setup and SMS-style SMB ioctl setup, and lazily starts the bundled SMAP/ministack path when a real file operation needs UDPFS/UDPRDMA.
+Internally this is UDPFS over Neutrino's SMAP/ministack path. `smbman.irx` registers the `smb:` iomanX device, fakes PS2SDK SMB devctl setup, and lazily starts the bundled SMAP/ministack path when a real file operation needs UDPFS/UDPRDMA.
+
+For PS2SDK SMB callers, login is a `fileXioDevctl("smb:", SMB_DEVCTL_LOGON, ...)` request. This driver spoofs that request as successful and also fakes share listing, share open/close, echo, and disk-info devctl calls.
 
 ## Load Order
 
