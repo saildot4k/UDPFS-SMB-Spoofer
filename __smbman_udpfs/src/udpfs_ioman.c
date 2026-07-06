@@ -170,7 +170,7 @@ static int smb_fake_get_share_list(const smbGetShareList_in_t *req)
     return 1;
 }
 
-static void sms_notify_login_success(void)
+static void sms_send_login_success(void)
 {
     int cmd[7] __attribute__((aligned(64)));
     int id;
@@ -186,16 +186,30 @@ static void sms_notify_login_success(void)
         while (sceSifDmaStat(id) >= 0)
             DelayThread(100);
     }
+}
 
+static void sms_notify_login_success(void)
+{
+    sms_send_login_success();
     M_PRINTF("smb ioctl: LOGIN SIF success sent\n");
 }
 
 static void sms_login_notify_thread(void *arg)
 {
+    int i;
+
     (void)arg;
 
     DelayThread(100000);
-    sms_notify_login_success();
+    sms_send_login_success();
+    M_PRINTF("smb ioctl: LOGIN SIF success sent\n");
+
+    for (i = 0; i < 19; i++) {
+        DelayThread(250000);
+        sms_send_login_success();
+    }
+
+    M_PRINTF("smb ioctl: LOGIN SIF success burst complete\n");
     ExitDeleteThread();
 }
 

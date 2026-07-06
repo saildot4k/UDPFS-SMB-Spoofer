@@ -14,20 +14,17 @@ IRX_FILES = \
 	ps2smap.irx \
 	smbman.irx
 
-PACKAGE = UDPFS_SMB_Spoofer.7z
-READY_DIR = READY_TO_USE_SMB
+PACKAGE = UDPFS_SMB_Spoofer.zip
 
 all:
 	$(foreach module,$(MODULES),$(MAKE) -C $(module) all &&) true
 
 clean:
 	$(foreach module,$(MODULES),$(MAKE) -C $(module) clean &&) true
-	rm -rf $(READY_DIR) $(PACKAGE)
+	rm -rf READY_TO_USE_SMB $(PACKAGE)
 
 package: all
-	rm -rf $(READY_DIR)
-	mkdir -p $(READY_DIR)
-	cp $(IRX_FILES) $(READY_DIR)/
-	7z a -t7z $(PACKAGE) $(IRX_FILES) $(READY_DIR)/*
+	rm -f $(PACKAGE)
+	zip -9 $(PACKAGE) $(IRX_FILES)
 
 .PHONY: all clean package

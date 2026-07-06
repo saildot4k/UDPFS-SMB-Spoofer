@@ -19,7 +19,7 @@ jobs:
     steps:
       - name: Install dependencies
         run: |
-          apk add build-base git p7zip
+          apk add build-base git zip
 
       - uses: actions/checkout@v4
 
@@ -34,7 +34,7 @@ jobs:
           name: UDPFS_SMB_SPOOFER_IRX
           path: |
             *.irx
-            UDPFS_SMB_Spoofer.7z
+            UDPFS_SMB_Spoofer.zip
 
       - name: Create release
         if: github.ref == 'refs/heads/main'
@@ -45,4 +45,4 @@ jobs:
           automatic_release_tag: "latest"
           title: "Latest development build"
           files: |
-            UDPFS_SMB_Spoofer.7z
+            UDPFS_SMB_Spoofer.zip

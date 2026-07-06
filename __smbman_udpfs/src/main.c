@@ -200,6 +200,9 @@ int _start(int argc, char *argv[])
     ret = udpfs_init();
     if (ret != 0)
         return MODULE_NO_RESIDENT_END;
+
+    ret = udpfs_network_init();
+    M_PRINTF("UDPFS network init -> %d\n", ret);
 #endif
 
     /* Start udpfs as BDM block device */
