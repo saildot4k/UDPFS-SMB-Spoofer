@@ -38,6 +38,7 @@
 #define SMS_SMB_SENUM_SIZE 8096
 #define SMS_ROOT_HANDLE ((void *)(uintptr_t)0x534d4252)
 #define SMS_ROOT_DONE_HANDLE ((void *)(uintptr_t)0x534d4244)
+#define SMS_ROOT_FILE_HANDLE ((void *)(uintptr_t)0x534d4246)
 
 #ifndef UDPFS_IOMAN_DEVICE_NAME
 #define UDPFS_IOMAN_DEVICE_NAME "udpfs"
@@ -81,6 +82,21 @@ static char g_smb_share_name[256] = "UDPFS";
 static unsigned char g_sms_senum_buf[SMS_SMB_SENUM_SIZE] __attribute__((aligned(64)));
 
 extern int udpfs_network_init(void);
+
+static int smb_is_root_path(const char *path)
+{
+    return path == NULL || path[0] == 0 || (path[0] == '/' && path[1] == 0) || (path[0] == '\\' && path[1] == 0);
+}
+
+static void smb_fill_root_stat(iox_stat_t *stat)
+{
+    if (stat == NULL)
+        return;
+
+    memset(stat, 0, sizeof(iox_stat_t));
+    stat->mode = FIO_S_IFDIR | FIO_S_IRUSR | FIO_S_IXUSR | FIO_S_IRGRP | FIO_S_IXGRP | FIO_S_IROTH | FIO_S_IXOTH;
+    stat->attr = FIO_SO_IFDIR;
+}
 
 static int udpfs_ensure_connected(void)
 {
@@ -178,7 +194,7 @@ static void sms_login_notify_thread(void *arg)
 {
     (void)arg;
 
-    DelayThread(1000);
+    DelayThread(100000);
     sms_notify_login_success();
     ExitDeleteThread();
 }
@@ -361,8 +377,15 @@ static int udpfs_open(iomanX_iop_file_t *f, const char *name, int flags, int mod
 {
     int fd_idx, ret;
     int32_t server_handle;
+    const char *log_name = name != NULL ? name : "";
 
-    M_DEBUG("%s(%s, 0x%x)\n", __FUNCTION__, name, flags);
+    M_PRINTF("smb open: unit=%d name='%s' flags=0x%x\n", f->unit, log_name, flags);
+
+    if (f->unit == 0 && smb_is_root_path(log_name)) {
+        M_PRINTF("smb open: root -> success\n");
+        f->privdata = SMS_ROOT_FILE_HANDLE;
+        return 0;
+    }
 
     ret = udpfs_ensure_connected();
     if (ret < 0)
@@ -394,6 +417,12 @@ static int udpfs_close(iomanX_iop_file_t *f)
 
     M_DEBUG("%s(fd=%d)\n", __FUNCTION__, fd_idx);
 
+    if (f->privdata == SMS_ROOT_FILE_HANDLE) {
+        M_PRINTF("smb close: root -> success\n");
+        f->privdata = NULL;
+        return 0;
+    }
+
     if (fd_idx < 0 || fd_idx >= UDPFS_MAX_HANDLES)
         return -EBADF;
     if (g_fds[fd_idx].server_handle < 0)
@@ -411,6 +440,11 @@ static int udpfs_read(iomanX_iop_file_t *f, void *buffer, int size)
     int fd_idx;
     int32_t server_handle;
     int ret;
+
+    if (f->privdata == SMS_ROOT_FILE_HANDLE) {
+        M_PRINTF("smb read: root -> eof\n");
+        return 0;
+    }
 
     ret = _validate_fd(f, &fd_idx, &server_handle);
     if (ret < 0)
@@ -444,6 +478,9 @@ static s64 udpfs_lseek64(iomanX_iop_file_t *f, s64 offset, int whence)
     int32_t server_handle;
     int ret;
 
+    if (f->privdata == SMS_ROOT_FILE_HANDLE)
+        return 0;
+
     ret = _validate_fd(f, &fd_idx, &server_handle);
     if (ret < 0)
         return ret;
@@ -463,7 +500,12 @@ static int udpfs_lseek(iomanX_iop_file_t *f, int offset, int whence)
 
 static int udpfs_ioctl(iomanX_iop_file_t *f, int cmd, void *data)
 {
+    M_PRINTF("smb ioctl: unit=%d cmd=0x%08x\n", f->unit, cmd);
+
     if (f->privdata == SMS_ROOT_HANDLE || f->privdata == SMS_ROOT_DONE_HANDLE)
+        return sms_ioctl((unsigned long)cmd, data);
+
+    if (f->privdata == SMS_ROOT_FILE_HANDLE)
         return sms_ioctl((unsigned long)cmd, data);
 
     return -EIO;
@@ -517,9 +559,10 @@ static int udpfs_dopen(iomanX_iop_file_t *f, const char *path)
     int32_t server_handle;
     const char *log_path = path != NULL ? path : "";
 
-    M_DEBUG("%s(%s)\n", __FUNCTION__, log_path);
+    M_PRINTF("smb dopen: unit=%d path='%s'\n", f->unit, log_path);
 
-    if (f->unit == 0 && (log_path[0] == 0 || (log_path[0] == '/' && log_path[1] == 0))) {
+    if (f->unit == 0 && smb_is_root_path(log_path)) {
+        M_PRINTF("smb dopen: root -> success\n");
         f->privdata = SMS_ROOT_HANDLE;
         return 0;
     }
@@ -604,9 +647,16 @@ static int udpfs_dread(iomanX_iop_file_t *f, iox_dirent_t *dirent)
 static int udpfs_getstat(iomanX_iop_file_t *f, const char *name, iox_stat_t *stat)
 {
     int ret;
+    const char *log_name = name != NULL ? name : "";
 
     (void)f;
-    M_DEBUG("%s(%s)\n", __FUNCTION__, name);
+    M_PRINTF("smb getstat: name='%s'\n", log_name);
+
+    if (f->unit == 0 && smb_is_root_path(log_name)) {
+        smb_fill_root_stat(stat);
+        M_PRINTF("smb getstat: root -> dir\n");
+        return 0;
+    }
 
     ret = udpfs_ensure_connected();
     if (ret < 0)
@@ -651,6 +701,8 @@ static int udpfs_devctl(iomanX_iop_file_t *f, const char *name, int cmd, void *a
     (void)name;
     (void)arg;
     (void)arglen;
+
+    M_PRINTF("smb devctl: name='%s' cmd=0x%08x\n", name != NULL ? name : "", cmd);
 
     switch (cmd) {
         case SMB_DEVCTL_GETPASSWORDHASHES:
@@ -783,5 +835,6 @@ int udpfs_init(void)
         return ret;
 
     M_PRINTF("smb: compatibility device registered\n");
+    sms_start_login_notify_thread();
     return 0;
 }
