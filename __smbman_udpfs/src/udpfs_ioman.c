@@ -7,6 +7,9 @@
 
 #include <errno.h>
 #include <intrman.h>
+#ifndef IOMANX_OLD_NAME_COMPATIBILITY
+#define IOMANX_OLD_NAME_COMPATIBILITY 0
+#endif
 #ifndef IOMANX_OLD_NAME_ADDDELDRV
 #define IOMANX_OLD_NAME_ADDDELDRV 0
 #endif
@@ -23,6 +26,9 @@
 #include "../include/main.h"
 #include "udpfs_core.h"
 
+typedef iomanX_iop_file_t iop_file_t;
+typedef iomanX_iop_device_t iop_device_t;
+typedef iomanX_iop_device_ops_t iop_device_ops_t;
 
 #define UDPFS_MAX_HANDLES 8
 
