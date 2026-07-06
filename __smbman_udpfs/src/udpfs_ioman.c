@@ -225,8 +225,12 @@ static void sms_start_login_notify_thread(void)
     thread.priority = 64;
 
     tid = CreateThread(&thread);
-    if (tid <= 0 || StartThread(tid, NULL) < 0)
+    if (tid <= 0 || StartThread(tid, NULL) < 0) {
+        M_PRINTF("smb ioctl: LOGIN notifier fallback\n");
         sms_notify_login_success();
+    } else {
+        M_PRINTF("smb ioctl: LOGIN notifier armed\n");
+    }
 }
 
 static int sms_fake_share_enum(const sms_senum_info_t *req)
@@ -333,7 +337,7 @@ static void _free_fd(int idx)
  * Helper: validate file descriptor and extract server handle.
  * Returns 0 on success, negative errno on error.
  */
-static int _validate_fd(iomanX_iop_file_t *f, int *fd_idx_out, int32_t *handle_out)
+static int _validate_fd(iop_file_t *f, int *fd_idx_out, int32_t *handle_out)
 {
     int fd_idx = (int)(uintptr_t)f->privdata;
     if (!udpfs_core_is_connected())
@@ -352,7 +356,7 @@ static int _validate_fd(iomanX_iop_file_t *f, int *fd_idx_out, int32_t *handle_o
  * iomanX device operations
  */
 
-static int udpfs_init_dev(iomanX_iop_device_t *d)
+static int udpfs_init_dev(iop_device_t *d)
 {
     int i;
 
@@ -369,7 +373,7 @@ static int udpfs_init_dev(iomanX_iop_device_t *d)
     return 0;
 }
 
-static int udpfs_deinit_dev(iomanX_iop_device_t *d)
+static int udpfs_deinit_dev(iop_device_t *d)
 {
     M_DEBUG("%s()\n", __FUNCTION__);
     (void)d;
@@ -382,12 +386,12 @@ static int udpfs_deinit_dev(iomanX_iop_device_t *d)
     return 0;
 }
 
-static int udpfs_format(iomanX_iop_file_t *f, const char *unk1, const char *unk2, void *unk3, int unk4)
+static int udpfs_format(iop_file_t *f, const char *unk1, const char *unk2, void *unk3, int unk4)
 {
     return -EIO;
 }
 
-static int udpfs_open(iomanX_iop_file_t *f, const char *name, int flags, int mode)
+static int udpfs_open(iop_file_t *f, const char *name, int flags, int mode)
 {
     int fd_idx, ret;
     int32_t server_handle;
@@ -425,7 +429,7 @@ static int udpfs_open(iomanX_iop_file_t *f, const char *name, int flags, int mod
     return 0;
 }
 
-static int udpfs_close(iomanX_iop_file_t *f)
+static int udpfs_close(iop_file_t *f)
 {
     int fd_idx = (int)(uintptr_t)f->privdata;
 
@@ -449,7 +453,7 @@ static int udpfs_close(iomanX_iop_file_t *f)
     return 0;
 }
 
-static int udpfs_read(iomanX_iop_file_t *f, void *buffer, int size)
+static int udpfs_read(iop_file_t *f, void *buffer, int size)
 {
     int fd_idx;
     int32_t server_handle;
@@ -470,7 +474,7 @@ static int udpfs_read(iomanX_iop_file_t *f, void *buffer, int size)
     return udpfs_core_read(server_handle, buffer, size);
 }
 
-static int udpfs_write(iomanX_iop_file_t *f, void *buffer, int size)
+static int udpfs_write(iop_file_t *f, void *buffer, int size)
 {
     int fd_idx;
     int32_t server_handle;
@@ -486,7 +490,7 @@ static int udpfs_write(iomanX_iop_file_t *f, void *buffer, int size)
     return udpfs_core_write(server_handle, buffer, size);
 }
 
-static s64 udpfs_lseek64(iomanX_iop_file_t *f, s64 offset, int whence)
+static s64 udpfs_lseek64(iop_file_t *f, s64 offset, int whence)
 {
     int fd_idx;
     int32_t server_handle;
@@ -506,13 +510,13 @@ static s64 udpfs_lseek64(iomanX_iop_file_t *f, s64 offset, int whence)
     return udpfs_core_lseek(server_handle, offset, whence);
 }
 
-static int udpfs_lseek(iomanX_iop_file_t *f, int offset, int whence)
+static int udpfs_lseek(iop_file_t *f, int offset, int whence)
 {
     M_DEBUG("%s(%d, %d)\n", __FUNCTION__, offset, whence);
     return (int)udpfs_lseek64(f, (s64)offset, whence);
 }
 
-static int udpfs_ioctl(iomanX_iop_file_t *f, int cmd, void *data)
+static int udpfs_ioctl(iop_file_t *f, int cmd, void *data)
 {
     M_PRINTF("smb ioctl: unit=%d cmd=0x%08x\n", f->unit, cmd);
 
@@ -525,7 +529,7 @@ static int udpfs_ioctl(iomanX_iop_file_t *f, int cmd, void *data)
     return -EIO;
 }
 
-static int udpfs_remove(iomanX_iop_file_t *f, const char *name)
+static int udpfs_remove(iop_file_t *f, const char *name)
 {
     int ret;
 
@@ -539,7 +543,7 @@ static int udpfs_remove(iomanX_iop_file_t *f, const char *name)
     return udpfs_core_remove(name);
 }
 
-static int udpfs_mkdir(iomanX_iop_file_t *f, const char *path, int mode)
+static int udpfs_mkdir(iop_file_t *f, const char *path, int mode)
 {
     int ret;
 
@@ -553,7 +557,7 @@ static int udpfs_mkdir(iomanX_iop_file_t *f, const char *path, int mode)
     return udpfs_core_mkdir(path, mode);
 }
 
-static int udpfs_rmdir(iomanX_iop_file_t *f, const char *path)
+static int udpfs_rmdir(iop_file_t *f, const char *path)
 {
     int ret;
 
@@ -567,7 +571,7 @@ static int udpfs_rmdir(iomanX_iop_file_t *f, const char *path)
     return udpfs_core_rmdir(path);
 }
 
-static int udpfs_dopen(iomanX_iop_file_t *f, const char *path)
+static int udpfs_dopen(iop_file_t *f, const char *path)
 {
     int fd_idx, ret;
     int32_t server_handle;
@@ -607,7 +611,7 @@ static int udpfs_dopen(iomanX_iop_file_t *f, const char *path)
     return 0;
 }
 
-static int udpfs_dclose(iomanX_iop_file_t *f)
+static int udpfs_dclose(iop_file_t *f)
 {
     M_DEBUG("%s()\n", __FUNCTION__);
 
@@ -619,7 +623,7 @@ static int udpfs_dclose(iomanX_iop_file_t *f)
     return udpfs_close(f);
 }
 
-static int udpfs_dread(iomanX_iop_file_t *f, iox_dirent_t *dirent)
+static int udpfs_dread(iop_file_t *f, iox_dirent_t *dirent)
 {
     int fd_idx;
     int32_t server_handle;
@@ -658,7 +662,7 @@ static int udpfs_dread(iomanX_iop_file_t *f, iox_dirent_t *dirent)
     return 1;
 }
 
-static int udpfs_getstat(iomanX_iop_file_t *f, const char *name, iox_stat_t *stat)
+static int udpfs_getstat(iop_file_t *f, const char *name, iox_stat_t *stat)
 {
     int ret;
     const char *log_name = name != NULL ? name : "";
@@ -679,37 +683,37 @@ static int udpfs_getstat(iomanX_iop_file_t *f, const char *name, iox_stat_t *sta
     return udpfs_core_getstat(name, stat);
 }
 
-static int udpfs_chstat(iomanX_iop_file_t *f, const char *name, iox_stat_t *stat, unsigned int mask)
+static int udpfs_chstat(iop_file_t *f, const char *name, iox_stat_t *stat, unsigned int mask)
 {
     return -EIO;
 }
 
-static int udpfs_rename(iomanX_iop_file_t *f, const char *old, const char *new_name)
+static int udpfs_rename(iop_file_t *f, const char *old, const char *new_name)
 {
     return -EIO;
 }
 
-static int udpfs_chdir(iomanX_iop_file_t *f, const char *name)
+static int udpfs_chdir(iop_file_t *f, const char *name)
 {
     return -EIO;
 }
 
-static int udpfs_sync(iomanX_iop_file_t *f, const char *dev, int flag)
+static int udpfs_sync(iop_file_t *f, const char *dev, int flag)
 {
     return -EIO;
 }
 
-static int udpfs_mount(iomanX_iop_file_t *f, const char *fsname, const char *devname, int flag, void *arg, int arglen)
+static int udpfs_mount(iop_file_t *f, const char *fsname, const char *devname, int flag, void *arg, int arglen)
 {
     return -EIO;
 }
 
-static int udpfs_umount(iomanX_iop_file_t *f, const char *fsname)
+static int udpfs_umount(iop_file_t *f, const char *fsname)
 {
     return -EIO;
 }
 
-static int udpfs_devctl(iomanX_iop_file_t *f, const char *name, int cmd, void *arg, unsigned int arglen, void *buf, unsigned int buflen)
+static int udpfs_devctl(iop_file_t *f, const char *name, int cmd, void *arg, unsigned int arglen, void *buf, unsigned int buflen)
 {
     (void)f;
     (void)name;
@@ -767,17 +771,17 @@ static int udpfs_devctl(iomanX_iop_file_t *f, const char *name, int cmd, void *a
     return 0;
 }
 
-static int udpfs_symlink(iomanX_iop_file_t *f, const char *old, const char *new_name)
+static int udpfs_symlink(iop_file_t *f, const char *old, const char *new_name)
 {
     return -EIO;
 }
 
-static int udpfs_readlink(iomanX_iop_file_t *f, const char *path, char *buf, unsigned int buflen)
+static int udpfs_readlink(iop_file_t *f, const char *path, char *buf, unsigned int buflen)
 {
     return -EIO;
 }
 
-static int udpfs_ioctl2(iomanX_iop_file_t *f, int cmd, void *data, unsigned int datalen, void *rdata, unsigned int rdatalen)
+static int udpfs_ioctl2(iop_file_t *f, int cmd, void *data, unsigned int datalen, void *rdata, unsigned int rdatalen)
 {
     if (cmd == 0x80) {
         int fd_idx = (int)(uintptr_t)f->privdata;
@@ -792,7 +796,7 @@ static int udpfs_ioctl2(iomanX_iop_file_t *f, int cmd, void *data, unsigned int 
 /*
  * Device ops table
  */
-static iomanX_iop_device_ops_t udpfs_device_ops = {
+static iop_device_ops_t udpfs_device_ops = {
     udpfs_init_dev,
     udpfs_deinit_dev,
     udpfs_format,
@@ -824,7 +828,7 @@ static iomanX_iop_device_ops_t udpfs_device_ops = {
 };
 
 static const char udpfs_name[] = UDPFS_IOMAN_DEVICE_NAME;
-static iomanX_iop_device_t udpfs_device = {
+static iop_device_t udpfs_device = {
     udpfs_name,
     IOP_DT_FSEXT | IOP_DT_FS,
     1,

@@ -42,4 +42,4 @@ Use a PS2SDK environment:
 make clean package
 ```
 
-GitHub Actions builds in `ps2dev/ps2dev:latest` and uploads the six IRX files plus `UDPFS_SMB_Spoofer.7z`.
+GitHub Actions builds in `ps2dev/ps2dev:latest` and uploads the six IRX files plus `UDPFS_SMB_Spoofer.zip`.
