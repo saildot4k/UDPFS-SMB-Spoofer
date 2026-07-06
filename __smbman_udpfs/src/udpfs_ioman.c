@@ -7,6 +7,9 @@
 
 #include <errno.h>
 #include <intrman.h>
+#ifndef IOMANX_OLD_NAME_ADDDELDRV
+#define IOMANX_OLD_NAME_ADDDELDRV 0
+#endif
 #include <iomanX.h>
 #include <io_common.h>
 #include <sifcmd.h>
