@@ -8,6 +8,7 @@
 #include <errno.h>
 #include <intrman.h>
 #include <iomanX.h>
+#include <ioman_mod.h>
 #include <io_common.h>
 #include <sifcmd.h>
 #include <sifman.h>
@@ -97,6 +98,41 @@ static void smb_fill_root_stat(iox_stat_t *stat)
     memset(stat, 0, sizeof(iox_stat_t));
     stat->mode = FIO_S_IFDIR | FIO_S_IRUSR | FIO_S_IXUSR | FIO_S_IRGRP | FIO_S_IXGRP | FIO_S_IROTH | FIO_S_IXOTH;
     stat->attr = FIO_SO_IFDIR;
+}
+
+static int smb_modex_to_mode(int modex)
+{
+    int mode = 0;
+
+    if (modex & FIO_S_IFLNK)
+        mode |= FIO_SO_IFLNK;
+    if (modex & FIO_S_IFREG)
+        mode |= FIO_SO_IFREG;
+    if (modex & FIO_S_IFDIR)
+        mode |= FIO_SO_IFDIR;
+    if (modex & (FIO_S_IRUSR | FIO_S_IRGRP | FIO_S_IROTH))
+        mode |= FIO_SO_IROTH;
+    if (modex & (FIO_S_IWUSR | FIO_S_IWGRP | FIO_S_IWOTH))
+        mode |= FIO_SO_IWOTH;
+    if (modex & (FIO_S_IXUSR | FIO_S_IXGRP | FIO_S_IXOTH))
+        mode |= FIO_SO_IXOTH;
+
+    return mode;
+}
+
+static void smb_copy_stat_to_legacy(const iox_stat_t *src, io_stat_t *dst)
+{
+    if (src == NULL || dst == NULL)
+        return;
+
+    memset(dst, 0, sizeof(io_stat_t));
+    dst->mode = smb_modex_to_mode(src->mode);
+    dst->attr = src->attr;
+    dst->size = src->size;
+    dst->hisize = src->hisize;
+    memcpy(dst->ctime, src->ctime, sizeof(dst->ctime));
+    memcpy(dst->atime, src->atime, sizeof(dst->atime));
+    memcpy(dst->mtime, src->mtime, sizeof(dst->mtime));
 }
 
 static int udpfs_ensure_connected(void)
@@ -263,6 +299,67 @@ static int sms_fake_share_enum(const sms_senum_info_t *req)
 static int sms_ioctl(unsigned long cmd, void *data)
 {
     switch (cmd) {
+        case SMB_DEVCTL_GETPASSWORDHASHES:
+            M_PRINTF("smb ioctl: PS2SDK GETPASSWORDHASHES -> success\n");
+            return 0;
+
+        case SMB_DEVCTL_LOGON:
+            g_ps2sdk_logged_on = 1;
+            g_ps2sdk_share_open = 0;
+            if (data != NULL) {
+                const smbLogOn_in_t *logon = (const smbLogOn_in_t *)data;
+                M_PRINTF("smb ioctl: PS2SDK LOGON server='%s' port=%d -> success\n",
+                    logon->serverIP, logon->serverPort);
+            } else {
+                M_PRINTF("smb ioctl: PS2SDK LOGON -> success\n");
+            }
+            return 0;
+
+        case SMB_DEVCTL_LOGOFF:
+            g_ps2sdk_logged_on = 0;
+            g_ps2sdk_share_open = 0;
+            M_PRINTF("smb ioctl: PS2SDK LOGOFF -> success\n");
+            return 0;
+
+        case SMB_DEVCTL_GETSHARELIST:
+            if (!g_ps2sdk_logged_on)
+                g_ps2sdk_logged_on = 1;
+            M_PRINTF("smb ioctl: PS2SDK GETSHARELIST -> 1 share\n");
+            return smb_fake_get_share_list((const smbGetShareList_in_t *)data);
+
+        case SMB_DEVCTL_OPENSHARE:
+            if (data != NULL)
+                smb_set_share_name(((const smbOpenShare_in_t *)data)->ShareName);
+            if (!g_ps2sdk_logged_on)
+                g_ps2sdk_logged_on = 1;
+            g_ps2sdk_share_open = 1;
+            M_PRINTF("smb ioctl: PS2SDK OPENSHARE -> success\n");
+            return 0;
+
+        case SMB_DEVCTL_CLOSESHARE:
+            g_ps2sdk_share_open = 0;
+            M_PRINTF("smb ioctl: PS2SDK CLOSESHARE -> success\n");
+            return 0;
+
+        case SMB_DEVCTL_ECHO:
+            M_PRINTF("smb ioctl: PS2SDK ECHO -> success\n");
+            return 0;
+
+        case SMB_DEVCTL_QUERYDISKINFO:
+            if (!g_ps2sdk_logged_on)
+                g_ps2sdk_logged_on = 1;
+            if (!g_ps2sdk_share_open)
+                g_ps2sdk_share_open = 1;
+            if (data != NULL) {
+                smbQueryDiskInfo_out_t *info = (smbQueryDiskInfo_out_t *)data;
+                info->TotalUnits = 0x100000;
+                info->BlocksPerUnit = 1;
+                info->BlockSize = 512;
+                info->FreeUnits = 0x100000;
+            }
+            M_PRINTF("smb ioctl: PS2SDK QUERYDISKINFO -> success\n");
+            return 0;
+
         case SMS_SMB_IOCTL_LOGIN:
             if (data == NULL || ((const sms_login_info_t *)data)->m_fAsync) {
                 M_PRINTF("smb ioctl: LOGIN async -> notify success\n");
@@ -813,6 +910,139 @@ static int udpfs_ioctl2(iop_file_t *f, int cmd, void *data, unsigned int datalen
     return -EIO;
 }
 
+static int udpfs_legacy_init_dev(iop_io_device_t *d)
+{
+    return udpfs_init_dev((iop_device_t *)d);
+}
+
+static int udpfs_legacy_deinit_dev(iop_io_device_t *d)
+{
+    return udpfs_deinit_dev((iop_device_t *)d);
+}
+
+static int udpfs_legacy_format(iop_io_file_t *f)
+{
+    (void)f;
+    return -EIO;
+}
+
+static int udpfs_legacy_open(iop_io_file_t *f, const char *name, int flags)
+{
+    M_PRINTF("smb legacy open: unit=%d name='%s' flags=0x%x\n",
+        f->unit, name != NULL ? name : "", flags);
+    return udpfs_open((iop_file_t *)f, name, flags, 0);
+}
+
+static int udpfs_legacy_close(iop_io_file_t *f)
+{
+    M_PRINTF("smb legacy close: unit=%d\n", f->unit);
+    return udpfs_close((iop_file_t *)f);
+}
+
+static int udpfs_legacy_read(iop_io_file_t *f, void *buffer, int size)
+{
+    return udpfs_read((iop_file_t *)f, buffer, size);
+}
+
+static int udpfs_legacy_write(iop_io_file_t *f, void *buffer, int size)
+{
+    return udpfs_write((iop_file_t *)f, buffer, size);
+}
+
+static int udpfs_legacy_lseek(iop_io_file_t *f, int offset, int whence)
+{
+    return udpfs_lseek((iop_file_t *)f, offset, whence);
+}
+
+static int udpfs_legacy_ioctl(iop_io_file_t *f, unsigned long cmd, void *data)
+{
+    M_PRINTF("smb legacy ioctl: unit=%d cmd=0x%08x\n", f->unit, (unsigned int)cmd);
+    return sms_ioctl(cmd, data);
+}
+
+static int udpfs_legacy_remove(iop_io_file_t *f, const char *name)
+{
+    return udpfs_remove((iop_file_t *)f, name);
+}
+
+static int udpfs_legacy_mkdir(iop_io_file_t *f, const char *path)
+{
+    return udpfs_mkdir((iop_file_t *)f, path, 0777);
+}
+
+static int udpfs_legacy_rmdir(iop_io_file_t *f, const char *path)
+{
+    return udpfs_rmdir((iop_file_t *)f, path);
+}
+
+static int udpfs_legacy_dopen(iop_io_file_t *f, const char *path)
+{
+    M_PRINTF("smb legacy dopen: unit=%d path='%s'\n", f->unit, path != NULL ? path : "");
+    return udpfs_dopen((iop_file_t *)f, path);
+}
+
+static int udpfs_legacy_dclose(iop_io_file_t *f)
+{
+    return udpfs_dclose((iop_file_t *)f);
+}
+
+static int udpfs_legacy_dread(iop_io_file_t *f, io_dirent_t *dirent)
+{
+    int fd_idx;
+    int32_t server_handle;
+    iox_stat_t stat;
+    char name[256];
+    int ret;
+
+    if (f->privdata == SMS_ROOT_HANDLE) {
+        memset(dirent, 0, sizeof(io_dirent_t));
+        dirent->stat.mode = FIO_SO_IFDIR | FIO_SO_IROTH | FIO_SO_IXOTH;
+        strncpy(dirent->name, g_smb_share_name, sizeof(dirent->name) - 1);
+        f->privdata = SMS_ROOT_DONE_HANDLE;
+        return 1;
+    }
+
+    if (f->privdata == SMS_ROOT_DONE_HANDLE)
+        return 0;
+
+    ret = _validate_fd((iop_file_t *)f, &fd_idx, &server_handle);
+    if (ret < 0)
+        return ret;
+
+    ret = udpfs_core_dread(server_handle, &stat, name, sizeof(name));
+    if (ret <= 0)
+        return ret;
+
+    memset(dirent, 0, sizeof(io_dirent_t));
+    smb_copy_stat_to_legacy(&stat, &dirent->stat);
+    strncpy(dirent->name, name, sizeof(dirent->name) - 1);
+    return 1;
+}
+
+static int udpfs_legacy_getstat(iop_io_file_t *f, const char *name, io_stat_t *stat)
+{
+    iox_stat_t xstat;
+    int ret;
+
+    M_PRINTF("smb legacy getstat: name='%s'\n", name != NULL ? name : "");
+
+    ret = udpfs_getstat((iop_file_t *)f, name, &xstat);
+    if (ret < 0)
+        return ret;
+
+    smb_copy_stat_to_legacy(&xstat, stat);
+    return 0;
+}
+
+static int udpfs_legacy_chstat(iop_io_file_t *f, const char *name, io_stat_t *stat, unsigned int statmask)
+{
+    (void)f;
+    (void)name;
+    (void)stat;
+    (void)statmask;
+    return -EIO;
+}
+
 
 /*
  * Device ops table
@@ -857,6 +1087,34 @@ static iop_device_t udpfs_device = {
     &udpfs_device_ops
 };
 
+static iop_io_device_ops_t udpfs_legacy_device_ops = {
+    udpfs_legacy_init_dev,
+    udpfs_legacy_deinit_dev,
+    udpfs_legacy_format,
+    udpfs_legacy_open,
+    udpfs_legacy_close,
+    udpfs_legacy_read,
+    udpfs_legacy_write,
+    udpfs_legacy_lseek,
+    udpfs_legacy_ioctl,
+    udpfs_legacy_remove,
+    udpfs_legacy_mkdir,
+    udpfs_legacy_rmdir,
+    udpfs_legacy_dopen,
+    udpfs_legacy_dclose,
+    udpfs_legacy_dread,
+    udpfs_legacy_getstat,
+    udpfs_legacy_chstat
+};
+
+static iop_io_device_t udpfs_legacy_device = {
+    udpfs_name,
+    IOP_DT_FS,
+    1,
+    "SMB",
+    &udpfs_legacy_device_ops
+};
+
 
 /*
  * Initialize UDPFS as iomanX device
@@ -864,14 +1122,24 @@ static iop_device_t udpfs_device = {
 int udpfs_init(void)
 {
     int ret;
+    int legacy_ret;
 
     M_DEBUG("UDPFS over UDPRDMA by Maximus32\n");
 
     DelDrv(udpfs_device.name);
+    io_DelDrv(udpfs_legacy_device.name);
+
     ret = AddDrv((iop_device_t *)&udpfs_device);
-    if (ret != 0)
+    M_PRINTF("smb: compatibility AddDrv -> %d\n", ret);
+
+    legacy_ret = io_AddDrv(&udpfs_legacy_device);
+    M_PRINTF("smb: legacy io_AddDrv -> %d\n", legacy_ret);
+
+    if (ret != 0 && legacy_ret != 0)
         return ret;
 
     M_PRINTF("smb: compatibility device registered\n");
+    sms_start_login_notify_thread();
+    M_PRINTF("smb: startup login success notifier requested\n");
     return 0;
 }

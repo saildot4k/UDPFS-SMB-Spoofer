@@ -7,6 +7,7 @@
 #include <dev9.h>
 #include <intrman.h>
 #include <ioman.h>
+#include <ioman_mod.h>
 #include <loadcore.h>
 #include <mstack.h>
 #include <sifcmd.h>

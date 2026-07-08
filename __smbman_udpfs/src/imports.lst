@@ -43,6 +43,8 @@ I_read
 I_close
 I_AddDrv
 I_DelDrv
+I_io_AddDrv
+I_io_DelDrv
 ioman_IMPORTS_end
 #endif
 
